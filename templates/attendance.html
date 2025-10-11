@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance - Employee Management System{% endblock %}
+{% block page_title %}Attendance{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-clock me-2"></i>Attendance Records
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th>Check In</th>
+                                <th>Check Out</th>
+                                <th>Hours Worked</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in attendance_records %}
+                            <tr>
+                                <td>{{ record.date }}</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if record.status == 'Present' else 'danger' if record.status == 'Absent' else 'warning' }}">
+                                        {{ record.status }}
+                                    </span>
+                                </td>
+                                <td>{{ record.check_in }}</td>
+                                <td>{{ record.check_out }}</td>
+                                <td>
+                                    {% if record.check_in and record.check_out %}
+                                        {% set in_time = record.check_in.split(':') %}
+                                        {% set out_time = record.check_out.split(':') %}
+                                        {% set hours = (out_time[0]|int - in_time[0]|int) %}
+                                        {{ hours }}h
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-plus me-2"></i>Mark Attendance
+                </h5>
+            </div>
+            <div class="card-body">
+                <form id="attendanceForm">
+                    <div class="mb-3">
+                        <label for="date" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="date" name="date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="status" class="form-label">Status</label>
+                        <select class="form-select" id="status" name="status" required>
+                            <option value="">Select Status</option>
+                            <option value="Present">Present</option>
+                            <option value="Absent">Absent</option>
+                            <option value="Late">Late</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="check_in" class="form-label">Check In Time</label>
+                        <input type="time" class="form-control" id="check_in" name="check_in">
+                    </div>
+                    <div class="mb-3">
+                        <label for="check_out" class="form-label">Check Out Time</label>
+                        <input type="time" class="form-control" id="check_out" name="check_out">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-save me-2"></i>Record Attendance
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('attendanceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData);
+    
+    fetch('/add_attendance', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            alert('Attendance recorded successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred');
+    });
+});
+
+// Set today's date as default
+document.getElementById('date').valueAsDate = new Date();
+</script>
+{% endblock %}
