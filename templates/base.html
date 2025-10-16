@@ -60,6 +60,9 @@
                         <a class="nav-link {% if request.endpoint == 'leave_management' %}active{% endif %}" href="{{ url_for('leave_management') }}">
                             <i class="fas fa-calendar-check me-2"></i>Leave Management
                         </a>
+                        <a class="nav-link {% if request.endpoint == 'audit_logs' %}active{% endif %}" href="{{ url_for('audit_logs') }}">
+                            <i class="fas fa-clipboard-list me-2"></i>Audit Logs
+                        </a>
                         {% endif %}
                         <a class="nav-link {% if request.endpoint == 'personal_info' %}active{% endif %}" href="{{ url_for('personal_info') }}">
                             <i class="fas fa-user me-2"></i>Personal Information

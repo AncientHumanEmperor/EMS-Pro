@@ -3,6 +3,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from datetime import datetime, date
 import json
+import functools
 
 # Database imports - choose one
 # For MongoDB:
@@ -252,6 +253,65 @@ except Exception as e:
 #         print(f"MySQL connection error: {e}")
 #         return None
 
+# Admin validation decorator
+def admin_required(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please login first!', 'error')
+            return redirect(url_for('login'))
+        
+        if session.get('user_role') != 'admin':
+            flash('Access denied! Admin privileges required.', 'error')
+            log_audit_event('UNAUTHORIZED_ACCESS', f.__name__, session.get('user_id', 'unknown'))
+            return redirect(url_for('dashboard'))
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Audit logging function
+def log_audit_event(action, target, actor_id, details=None):
+    """Log administrative actions for audit trail"""
+    try:
+        # Get actor information
+        actor = db.employees.find_one({'_id': actor_id}, {'name': 1, 'email': 1}) if actor_id != 'unknown' else None
+        actor_name = actor['name'] if actor else 'Unknown User'
+        actor_email = actor['email'] if actor else 'unknown@unknown.com'
+        
+        audit_log = {
+            'action': action,
+            'target': target,
+            'actor_id': actor_id,
+            'actor_name': actor_name,
+            'actor_email': actor_email,
+            'timestamp': datetime.now(),
+            'details': details or {},
+            'ip_address': request.remote_addr if request else 'unknown'
+        }
+        
+        # Store in audit collection
+        if hasattr(db, 'audit_logs'):
+            db.audit_logs.insert_one(audit_log)
+        else:
+            # For mock database, create audit_logs collection
+            if not hasattr(db, 'audit_logs'):
+                db.audit_logs = MockCollection()
+            db.audit_logs.insert_one(audit_log)
+            
+        print(f"AUDIT: {action} by {actor_name} ({actor_email}) on {target} at {audit_log['timestamp']}")
+        
+    except Exception as e:
+        print(f"Audit logging error: {e}")
+
+# Check if user can be deleted (not admin)
+def can_delete_user(user_id):
+    """Check if a user can be deleted (non-admin users only)"""
+    try:
+        user = db.employees.find_one({'_id': user_id}, {'role': 1})
+        return user and user.get('role') != 'admin'
+    except:
+        return False
+
 # Database Models
 class Employee:
     def __init__(self, name, email, phone, department, role, password=None):
@@ -348,6 +408,35 @@ def login():
     
     return render_template('login.html')
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form['name']
+        email = request.form['email']
+        password = request.form['password']
+        
+        # Check if user already exists
+        existing_user = db.employees.find_one({'email': email})
+        if existing_user:
+            flash('Email already registered!', 'error')
+            return redirect(url_for('login'))
+        
+        # Create new employee
+        new_employee = Employee(
+            name=name,
+            email=email,
+            phone='',  # Default empty phone
+            department='General',  # Default department
+            role='employee',  # Default role
+            password=generate_password_hash(password)
+        )
+        
+        db.employees.insert_one(new_employee.to_dict())
+        flash('Registration successful! Please login with your credentials.', 'success')
+        return redirect(url_for('login'))
+    
+    return redirect(url_for('login'))
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -377,26 +466,15 @@ def dashboard():
                          recent_leaves=recent_leaves)
 
 @app.route('/employees')
+@admin_required
 def employees():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if session['user_role'] != 'admin':
-        flash('Access denied!', 'error')
-        return redirect(url_for('dashboard'))
-    
     employees = list(db.employees.find({}, {'password': 0}))
+    log_audit_event('VIEW_EMPLOYEES', 'employee_list', session['user_id'])
     return render_template('employees.html', employees=employees)
 
 @app.route('/leave_management')
+@admin_required
 def leave_management():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if session['user_role'] != 'admin':
-        flash('Access denied!', 'error')
-        return redirect(url_for('dashboard'))
-    
     # Get all leave applications with employee names
     leave_applications = list(db.leave_applications.find().sort('applied_at', -1))
     
@@ -405,34 +483,35 @@ def leave_management():
         leave['employee_name'] = employee['name'] if employee else 'Unknown'
         leave['employee_email'] = employee['email'] if employee else 'Unknown'
     
+    log_audit_event('VIEW_LEAVE_MANAGEMENT', 'leave_applications', session['user_id'])
     return render_template('leave_management.html', leave_applications=leave_applications)
 
 @app.route('/approve_leave/<leave_id>')
+@admin_required
 def approve_leave(leave_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if session['user_role'] != 'admin':
-        flash('Access denied!', 'error')
-        return redirect(url_for('dashboard'))
-    
     # Update leave status to approved
-    db.leave_applications.update_one({'_id': leave_id}, {'$set': {'status': 'Approved'}})
-    flash('Leave application approved!', 'success')
+    result = db.leave_applications.update_one({'_id': leave_id}, {'$set': {'status': 'Approved'}})
+    
+    if result.modified_count > 0:
+        flash('Leave application approved!', 'success')
+        log_audit_event('APPROVE_LEAVE', f'leave_{leave_id}', session['user_id'], {'leave_id': leave_id})
+    else:
+        flash('Leave application not found!', 'error')
+    
     return redirect(url_for('leave_management'))
 
 @app.route('/reject_leave/<leave_id>')
+@admin_required
 def reject_leave(leave_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    if session['user_role'] != 'admin':
-        flash('Access denied!', 'error')
-        return redirect(url_for('dashboard'))
-    
     # Update leave status to rejected
-    db.leave_applications.update_one({'_id': leave_id}, {'$set': {'status': 'Rejected'}})
-    flash('Leave application rejected!', 'info')
+    result = db.leave_applications.update_one({'_id': leave_id}, {'$set': {'status': 'Rejected'}})
+    
+    if result.modified_count > 0:
+        flash('Leave application rejected!', 'info')
+        log_audit_event('REJECT_LEAVE', f'leave_{leave_id}', session['user_id'], {'leave_id': leave_id})
+    else:
+        flash('Leave application not found!', 'error')
+    
     return redirect(url_for('leave_management'))
 
 @app.route('/personal_info')
@@ -532,11 +611,15 @@ def add_attendance():
     return jsonify({'message': 'Attendance recorded successfully'})
 
 @app.route('/add_employee', methods=['POST'])
+@admin_required
 def add_employee():
-    if 'user_id' not in session or session['user_role'] != 'admin':
-        return jsonify({'error': 'Access denied'}), 403
-    
     data = request.get_json()
+    
+    # Check if email already exists
+    existing_employee = db.employees.find_one({'email': data['email']})
+    if existing_employee:
+        return jsonify({'error': 'Email already exists'}), 400
+    
     employee = Employee(
         data['name'],
         data['email'],
@@ -546,8 +629,100 @@ def add_employee():
         generate_password_hash(data['password'])
     )
     
-    db.employees.insert_one(employee.to_dict())
+    result = db.employees.insert_one(employee.to_dict())
+    
+    # Log the action
+    log_audit_event('ADD_EMPLOYEE', f'employee_{result.inserted_id}', session['user_id'], {
+        'employee_name': data['name'],
+        'employee_email': data['email'],
+        'department': data['department'],
+        'role': data['role']
+    })
+    
     return jsonify({'message': 'Employee added successfully'})
+
+@app.route('/update_employee/<employee_id>', methods=['POST'])
+@admin_required
+def update_employee(employee_id):
+    data = request.get_json()
+    
+    # Get current employee data for logging
+    current_employee = db.employees.find_one({'_id': employee_id}, {'password': 0})
+    if not current_employee:
+        return jsonify({'error': 'Employee not found'}), 404
+    
+    # Check if email is being changed and if it already exists
+    if data.get('email') != current_employee.get('email'):
+        existing_employee = db.employees.find_one({'email': data['email']})
+        if existing_employee:
+            return jsonify({'error': 'Email already exists'}), 400
+    
+    # Prepare update data
+    update_data = {
+        'name': data['name'],
+        'email': data['email'],
+        'phone': data['phone'],
+        'department': data['department'],
+        'role': data['role']
+    }
+    
+    # Add password if provided
+    if data.get('password'):
+        update_data['password'] = generate_password_hash(data['password'])
+    
+    # Update the employee
+    result = db.employees.update_one({'_id': employee_id}, {'$set': update_data})
+    
+    if result.modified_count > 0:
+        # Log the action
+        log_audit_event('UPDATE_EMPLOYEE', f'employee_{employee_id}', session['user_id'], {
+            'employee_name': data['name'],
+            'employee_email': data['email'],
+            'department': data['department'],
+            'role': data['role'],
+            'password_updated': bool(data.get('password')),
+            'previous_data': current_employee
+        })
+        
+        return jsonify({'message': 'Employee updated successfully'})
+    else:
+        return jsonify({'error': 'No changes made'}), 400
+
+@app.route('/delete_employee/<employee_id>', methods=['POST'])
+@admin_required
+def delete_employee(employee_id):
+    # Check if user can be deleted (not admin)
+    if not can_delete_user(employee_id):
+        return jsonify({'error': 'Cannot delete admin accounts'}), 403
+    
+    # Get employee data for logging
+    employee = db.employees.find_one({'_id': employee_id}, {'password': 0})
+    if not employee:
+        return jsonify({'error': 'Employee not found'}), 404
+    
+    # Delete the employee
+    result = db.employees.delete_one({'_id': employee_id})
+    
+    if result.deleted_count > 0:
+        # Log the action
+        log_audit_event('DELETE_EMPLOYEE', f'employee_{employee_id}', session['user_id'], {
+            'deleted_employee_name': employee['name'],
+            'deleted_employee_email': employee['email'],
+            'deleted_employee_department': employee.get('department'),
+            'deleted_employee_role': employee.get('role')
+        })
+        
+        return jsonify({'message': 'Employee deleted successfully'})
+    else:
+        return jsonify({'error': 'Employee not found'}), 404
+
+@app.route('/audit_logs')
+@admin_required
+def audit_logs():
+    """View audit logs - admin only"""
+    logs = list(db.audit_logs.find().sort('timestamp', -1).limit(100))
+    log_audit_event('VIEW_AUDIT_LOGS', 'audit_logs', session['user_id'])
+    return render_template('audit_logs.html', logs=logs)
 
 if __name__ == '__main__':
     # Create sample data if database is empty
