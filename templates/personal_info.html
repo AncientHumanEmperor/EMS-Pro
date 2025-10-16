@@ -4,8 +4,9 @@
 {% block page_title %}Personal Information{% endblock %}
 
 {% block content %}
+{% if employee %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
+    <div class="col-md-10">
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">
@@ -13,52 +14,199 @@
                 </h5>
             </div>
             <div class="card-body">
-                <form>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="name" class="form-label">Full Name</label>
-                            <input type="text" class="form-control" id="name" value="{{ employee.name }}" readonly>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="email" class="form-label">Email</label>
-                            <input type="email" class="form-control" id="email" value="{{ employee.email }}" readonly>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="phone" class="form-label">Phone</label>
-                            <input type="tel" class="form-control" id="phone" value="{{ employee.phone }}" readonly>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="department" class="form-label">Department</label>
-                            <input type="text" class="form-control" id="department" value="{{ employee.department }}" readonly>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="role" class="form-label">Role</label>
-                            <input type="text" class="form-control" id="role" value="{{ employee.role.title() }}" readonly>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="join_date" class="form-label">Join Date</label>
-                            <input type="text" class="form-control" id="join_date" value="{{ employee.created_at.strftime('%Y-%m-%d') }}" readonly>
+                <div class="row">
+                    <!-- Photo Upload Section -->
+                    <div class="col-md-4 mb-4">
+                        <div class="text-center">
+                            <div class="photo-container mb-3">
+                                {% if employee.photo %}
+                                    <img id="employee-photo" src="{{ url_for('uploaded_file', filename=employee.photo) }}" 
+                                         alt="Employee Photo" class="employee-photo">
+                                {% else %}
+                                    <div id="employee-photo" class="employee-photo-placeholder">
+                                        <i class="fas fa-user fa-4x text-muted"></i>
+                                        <p class="text-muted mt-2">No Photo</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="photo-upload-section">
+                                <input type="file" id="photo-input" accept="image/*" style="display: none;">
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('photo-input').click()">
+                                    <i class="fas fa-camera me-1"></i>Upload Photo
+                                </button>
+                                <div class="upload-progress mt-2" style="display: none;">
+                                    <div class="progress">
+                                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="address" class="form-label">Address</label>
-                        <textarea class="form-control" id="address" rows="3" placeholder="Enter your address"></textarea>
+                    
+                    <!-- Personal Information Form -->
+                    <div class="col-md-8">
+                        <form>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="name" class="form-label">Full Name</label>
+                                    <input type="text" class="form-control" id="name" value="{{ employee.name }}" readonly>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="email" value="{{ employee.email }}" readonly>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="phone" class="form-label">Phone</label>
+                                    <input type="tel" class="form-control" id="phone" value="{{ employee.phone }}" readonly>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="department" class="form-label">Department</label>
+                                    <input type="text" class="form-control" id="department" value="{{ employee.department }}" readonly>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="role" class="form-label">Role</label>
+                                    <input type="text" class="form-control" id="role" value="{{ employee.role.title() }}" readonly>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="join_date" class="form-label">Join Date</label>
+                                    <input type="text" class="form-control" id="join_date" value="{{ employee.created_at.strftime('%Y-%m-%d') }}" readonly>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="address" class="form-label">Address</label>
+                                <textarea class="form-control" id="address" rows="3" placeholder="Enter your address"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="emergency_contact" class="form-label">Emergency Contact</label>
+                                <input type="tel" class="form-control" id="emergency_contact" placeholder="Emergency contact number">
+                            </div>
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                <button type="button" class="btn btn-outline-secondary me-md-2">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Update Information</button>
+                            </div>
+                        </form>
                     </div>
-                    <div class="mb-3">
-                        <label for="emergency_contact" class="form-label">Emergency Contact</label>
-                        <input type="tel" class="form-control" id="emergency_contact" placeholder="Emergency contact number">
-                    </div>
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                        <button type="button" class="btn btn-outline-secondary me-md-2">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Update Information</button>
-                    </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const photoInput = document.getElementById('photo-input');
+    const uploadProgress = document.querySelector('.upload-progress');
+    const progressBar = document.querySelector('.progress-bar');
+    
+    photoInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            uploadPhoto(file);
+        }
+    });
+    
+    function uploadPhoto(file) {
+        const formData = new FormData();
+        formData.append('photo', file);
+        
+        // Show progress bar
+        uploadProgress.style.display = 'block';
+        progressBar.style.width = '0%';
+        
+        // Simulate progress
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 30;
+            if (progress > 90) progress = 90;
+            progressBar.style.width = progress + '%';
+        }, 200);
+        
+        fetch('/upload_photo', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            clearInterval(progressInterval);
+            progressBar.style.width = '100%';
+            
+            if (data.error) {
+                alert('Error: ' + data.error);
+                uploadProgress.style.display = 'none';
+            } else {
+                // Update photo display
+                const photoContainer = document.querySelector('.photo-container');
+                const photoElement = document.getElementById('employee-photo');
+                
+                if (photoElement.tagName === 'IMG') {
+                    photoElement.src = data.url;
+                } else {
+                    // Replace placeholder with image
+                    photoContainer.innerHTML = `
+                        <img id="employee-photo" src="${data.url}" 
+                             alt="Employee Photo" class="employee-photo">
+                    `;
+                }
+                
+                // Hide progress bar after success
+                setTimeout(() => {
+                    uploadProgress.style.display = 'none';
+                }, 1000);
+                
+                // Show success message
+                showNotification('Photo uploaded successfully!', 'success');
+            }
+        })
+        .catch(error => {
+            clearInterval(progressInterval);
+            uploadProgress.style.display = 'none';
+            console.error('Error:', error);
+            alert('Error uploading photo');
+        });
+    }
+    
+    function showNotification(message, type) {
+        const notification = document.createElement('div');
+        notification.className = `alert alert-${type} alert-dismissible fade show`;
+        notification.style.position = 'fixed';
+        notification.style.top = '20px';
+        notification.style.right = '20px';
+        notification.style.zIndex = '9999';
+        notification.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 3000);
+    }
+});
+</script>
+{% else %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                <h4>Employee Record Not Found</h4>
+                <p class="text-muted">Your employee record could not be found. Please contact your administrator.</p>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary">
+                    <i class="fas fa-home me-2"></i>Return to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}

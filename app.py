@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import os
 from datetime import datetime, date
 import json
 import functools
+import uuid
 
 # Database imports - choose one
 # For MongoDB:
@@ -16,6 +18,42 @@ from bson import ObjectId
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'
+
+# File upload configuration
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
+
+# Create uploads directory if it doesn't exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Helper functions for file handling
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def save_employee_photo(file, employee_id):
+    """Save employee photo and return the filename"""
+    if file and allowed_file(file.filename):
+        # Generate unique filename
+        file_extension = file.filename.rsplit('.', 1)[1].lower()
+        filename = f"employee_{employee_id}_{uuid.uuid4().hex}.{file_extension}"
+        
+        # Save file
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        return filename
+    return None
+
+def delete_employee_photo(filename):
+    """Delete employee photo file"""
+    if filename:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 # Database Configuration
 # MongoDB Configuration
@@ -36,6 +74,8 @@ class MockDB:
         self.employees = MockCollection()
         self.leave_applications = MockCollection()
         self.attendance = MockCollection()
+        self.performance_reviews = MockCollection()
+        self.audit_logs = MockCollection()
 
 class MockCollection:
     def __init__(self):
@@ -240,6 +280,35 @@ except Exception as e:
     for leave in sample_leaves:
         db.leave_applications.insert_one(leave)
     
+    # Add some sample performance reviews
+    sample_reviews = [
+        {
+            'employee_id': employee_result.inserted_id,  # John Doe's actual ID
+            'reviewer_id': admin_result.inserted_id,     # Admin's ID
+            'rating': 4,
+            'goals_achieved': 'Successfully completed Q3 project deliverables and improved team collaboration.',
+            'strengths': 'Strong technical skills, good communication, reliable team player.',
+            'areas_for_improvement': 'Could improve time management and take more initiative on complex tasks.',
+            'comments': 'John has shown consistent performance and growth this quarter.',
+            'review_period': 'Q3 2025',
+            'created_at': datetime.now()
+        },
+        {
+            'employee_id': employee_result.inserted_id,  # John Doe's actual ID
+            'reviewer_id': admin_result.inserted_id,     # Admin's ID
+            'rating': 5,
+            'goals_achieved': 'Exceeded expectations on all assigned projects and mentored junior team members.',
+            'strengths': 'Excellent leadership skills, innovative problem-solving, great attention to detail.',
+            'areas_for_improvement': 'Continue developing advanced technical skills.',
+            'comments': 'Outstanding performance this quarter. John is a valuable asset to the team.',
+            'review_period': 'Q2 2025',
+            'created_at': datetime.now()
+        }
+    ]
+    
+    for review in sample_reviews:
+        db.performance_reviews.insert_one(review)
+    
     print("Demo users created!")
     print("Admin: admin@company.com / 123456")
     print("Employee: john@company.com / 654321")
@@ -314,13 +383,14 @@ def can_delete_user(user_id):
 
 # Database Models
 class Employee:
-    def __init__(self, name, email, phone, department, role, password=None):
+    def __init__(self, name, email, phone, department, role, password=None, photo=None):
         self.name = name
         self.email = email
         self.phone = phone
         self.department = department
         self.role = role
         self.password = password
+        self.photo = photo
         self.created_at = datetime.now()
 
     def to_dict(self):
@@ -331,6 +401,7 @@ class Employee:
             'department': self.department,
             'role': self.role,
             'password': self.password,
+            'photo': self.photo,
             'created_at': self.created_at
         }
 
@@ -370,6 +441,31 @@ class LeaveApplication:
             'reason': self.reason,
             'status': self.status,
             'applied_at': self.applied_at
+        }
+
+class PerformanceReview:
+    def __init__(self, employee_id, reviewer_id, rating, goals_achieved, strengths, areas_for_improvement, comments, review_period):
+        self.employee_id = employee_id
+        self.reviewer_id = reviewer_id
+        self.rating = rating  # 1-5 scale
+        self.goals_achieved = goals_achieved
+        self.strengths = strengths
+        self.areas_for_improvement = areas_for_improvement
+        self.comments = comments
+        self.review_period = review_period
+        self.created_at = datetime.now()
+
+    def to_dict(self):
+        return {
+            'employee_id': self.employee_id,
+            'reviewer_id': self.reviewer_id,
+            'rating': self.rating,
+            'goals_achieved': self.goals_achieved,
+            'strengths': self.strengths,
+            'areas_for_improvement': self.areas_for_improvement,
+            'comments': self.comments,
+            'review_period': self.review_period,
+            'created_at': self.created_at
         }
 
 # Routes
@@ -526,6 +622,11 @@ def personal_info():
     except:
         # If that fails, use as string (for mock database)
         employee = db.employees.find_one({'_id': session['user_id']}, {'password': 0})
+    
+    # Safety check - if employee not found, redirect with error message
+    if not employee:
+        flash('Employee record not found. Please contact administrator.', 'error')
+        return redirect(url_for('dashboard'))
     
     return render_template('personal_info.html', employee=employee)
 
@@ -723,6 +824,251 @@ def audit_logs():
     logs = list(db.audit_logs.find().sort('timestamp', -1).limit(100))
     log_audit_event('VIEW_AUDIT_LOGS', 'audit_logs', session['user_id'])
     return render_template('audit_logs.html', logs=logs)
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    """Serve uploaded files"""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/upload_photo', methods=['POST'])
+def upload_photo():
+    """Upload employee photo"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['photo']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type. Allowed: PNG, JPG, JPEG, GIF, WEBP'}), 400
+    
+    try:
+        # Save the photo
+        filename = save_employee_photo(file, session['user_id'])
+        if not filename:
+            return jsonify({'error': 'Failed to save file'}), 500
+        
+        # Get current employee data
+        employee = db.employees.find_one({'_id': session['user_id']})
+        if not employee:
+            return jsonify({'error': 'Employee not found'}), 404
+        
+        # Delete old photo if exists
+        if employee.get('photo'):
+            delete_employee_photo(employee['photo'])
+        
+        # Update employee record with new photo
+        db.employees.update_one(
+            {'_id': session['user_id']}, 
+            {'$set': {'photo': filename}}
+        )
+        
+        # Log the action
+        log_audit_event('UPLOAD_PHOTO', f'employee_{session["user_id"]}', session['user_id'], {
+            'filename': filename
+        })
+        
+        return jsonify({
+            'message': 'Photo uploaded successfully',
+            'filename': filename,
+            'url': url_for('uploaded_file', filename=filename)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/performance')
+@admin_required
+def performance():
+    """Performance tracking dashboard - admin only"""
+    try:
+        # Get all employees with their performance data
+        employees = list(db.employees.find({}, {'password': 0}))
+        
+        # Get performance reviews for each employee
+        for employee in employees:
+            if employee and employee.get('_id'):
+                reviews = list(db.performance_reviews.find({'employee_id': employee['_id']}).sort('created_at', -1))
+                employee['reviews'] = reviews
+                
+                # Calculate average rating
+                if reviews:
+                    total_rating = sum(review['rating'] for review in reviews)
+                    employee['average_rating'] = round(total_rating / len(reviews), 1)
+                else:
+                    employee['average_rating'] = 0
+            else:
+                employee['reviews'] = []
+                employee['average_rating'] = 0
+        
+        log_audit_event('VIEW_PERFORMANCE', 'performance_dashboard', session['user_id'])
+        return render_template('performance.html', employees=employees)
+        
+    except Exception as e:
+        print(f"Error in performance route: {e}")
+        flash('Error loading performance data. Please try again.', 'error')
+        return redirect(url_for('dashboard'))
+
+@app.route('/add_performance_review', methods=['POST'])
+@admin_required
+def add_performance_review():
+    """Add a new performance review"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['employee_id', 'rating', 'goals_achieved', 'strengths', 'areas_for_improvement', 'comments', 'review_period']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'{field} is required'}), 400
+        
+        # Validate rating (1-5)
+        if not (1 <= int(data['rating']) <= 5):
+            return jsonify({'error': 'Rating must be between 1 and 5'}), 400
+        
+        # Create performance review
+        review = PerformanceReview(
+            employee_id=data['employee_id'],
+            reviewer_id=session['user_id'],
+            rating=int(data['rating']),
+            goals_achieved=data['goals_achieved'],
+            strengths=data['strengths'],
+            areas_for_improvement=data['areas_for_improvement'],
+            comments=data['comments'],
+            review_period=data['review_period']
+        )
+        
+        # Insert into database
+        result = db.performance_reviews.insert_one(review.to_dict())
+        
+        # Log the action
+        log_audit_event('ADD_PERFORMANCE_REVIEW', f'employee_{data["employee_id"]}', session['user_id'], {
+            'employee_id': data['employee_id'],
+            'rating': data['rating'],
+            'review_period': data['review_period']
+        })
+        
+        return jsonify({'message': 'Performance review added successfully'})
+        
+    except Exception as e:
+        print(f"Error adding performance review: {e}")
+        return jsonify({'error': 'Failed to add performance review'}), 500
+
+@app.route('/get_performance_reviews/<employee_id>')
+@admin_required
+def get_performance_reviews(employee_id):
+    """Get performance reviews for a specific employee"""
+    try:
+        reviews = list(db.performance_reviews.find({'employee_id': employee_id}).sort('created_at', -1))
+        
+        # Add reviewer names
+        for review in reviews:
+            reviewer = db.employees.find_one({'_id': review['reviewer_id']}, {'name': 1})
+            review['reviewer_name'] = reviewer['name'] if reviewer else 'Unknown'
+        
+        return jsonify(reviews)
+    except Exception as e:
+        print(f"Error getting performance reviews: {e}")
+        return jsonify({'error': 'Failed to load performance reviews'}), 500
+
+@app.route('/analytics')
+@admin_required
+def analytics():
+    """Department-wise analytics dashboard - admin only"""
+    try:
+        # Get all employees
+        employees = list(db.employees.find({}, {'password': 0}))
+        
+        # Department statistics
+        departments = {}
+        for employee in employees:
+            if not employee or not employee.get('_id'):
+                continue
+                
+            dept = employee.get('department', 'Unknown')
+            if dept not in departments:
+                departments[dept] = {
+                    'count': 0,
+                    'employees': [],
+                    'total_rating': 0,
+                    'review_count': 0
+                }
+            
+            departments[dept]['count'] += 1
+            departments[dept]['employees'].append(employee)
+            
+            # Get performance data for this employee
+            reviews = list(db.performance_reviews.find({'employee_id': employee['_id']}))
+            if reviews:
+                avg_rating = sum(review['rating'] for review in reviews) / len(reviews)
+                departments[dept]['total_rating'] += avg_rating
+                departments[dept]['review_count'] += len(reviews)
+        
+        # Calculate department averages
+        for dept in departments:
+            if departments[dept]['count'] > 0:
+                departments[dept]['avg_rating'] = round(departments[dept]['total_rating'] / departments[dept]['count'], 1)
+            else:
+                departments[dept]['avg_rating'] = 0
+        
+        # Leave statistics by department
+        leave_stats = {}
+        for dept in departments:
+            leave_stats[dept] = {
+                'total_leaves': 0,
+                'approved_leaves': 0,
+                'pending_leaves': 0,
+                'rejected_leaves': 0
+            }
+            
+            for employee in departments[dept]['employees']:
+                if employee and employee.get('_id'):
+                    leaves = list(db.leave_applications.find({'employee_id': employee['_id']}))
+                    leave_stats[dept]['total_leaves'] += len(leaves)
+                    
+                    for leave in leaves:
+                        status = leave.get('status', 'Pending')
+                        if status == 'Approved':
+                            leave_stats[dept]['approved_leaves'] += 1
+                        elif status == 'Pending':
+                            leave_stats[dept]['pending_leaves'] += 1
+                        elif status == 'Rejected':
+                            leave_stats[dept]['rejected_leaves'] += 1
+        
+        # Attendance statistics by department
+        attendance_stats = {}
+        for dept in departments:
+            attendance_stats[dept] = {
+                'total_records': 0,
+                'present_days': 0,
+                'absent_days': 0
+            }
+            
+            for employee in departments[dept]['employees']:
+                if employee and employee.get('_id'):
+                    attendance = list(db.attendance.find({'employee_id': employee['_id']}))
+                    attendance_stats[dept]['total_records'] += len(attendance)
+                    
+                    for record in attendance:
+                        if record.get('status') == 'Present':
+                            attendance_stats[dept]['present_days'] += 1
+                        else:
+                            attendance_stats[dept]['absent_days'] += 1
+        
+        log_audit_event('VIEW_ANALYTICS', 'analytics_dashboard', session['user_id'])
+        return render_template('analytics.html', 
+                             departments=departments, 
+                             leave_stats=leave_stats, 
+                             attendance_stats=attendance_stats)
+                             
+    except Exception as e:
+        print(f"Error in analytics route: {e}")
+        flash('Error loading analytics data. Please try again.', 'error')
+        return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     # Create sample data if database is empty
