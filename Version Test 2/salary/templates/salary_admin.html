@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}Salary Management - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-money-bill-wave me-2"></i>Salary Management</h2>
+                <div>
+                    <button class="btn btn-outline-primary me-2" onclick="exportSalaryHistory()">
+                        <i class="fas fa-download me-1"></i>Export History
+                    </button>
+                    <button class="btn btn-outline-success" onclick="exportPayrollSnapshot()">
+                        <i class="fas fa-file-csv me-1"></i>Export Payroll
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPI Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="card-title">{{ employee_summaries|length }}</h4>
+                                    <p class="card-text">Total Employees</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-users fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="card-title">{{ pending_requests|length }}</h4>
+                                    <p class="card-text">Pending Requests</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-clock fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="card-title">₹{{ "%.0f"|format(employee_summaries|sum(attribute='net_salary')) }}</h4>
+                                    <p class="card-text">Total Payroll</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-rupee-sign fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 class="card-title">{{ "%.1f"|format((employee_summaries|sum(attribute='performance_score') / employee_summaries|length) if employee_summaries else 0) }}</h4>
+                                    <p class="card-text">Avg Performance</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-chart-line fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending Requests Section -->
+            {% if pending_requests %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Pending Salary Requests</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Reason</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for request in pending_requests %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2">
+                                                {{ request.employee_name[0].upper() }}
+                                            </div>
+                                            <div>
+                                                <div class="fw-bold">{{ request.employee_name }}</div>
+                                                <small class="text-muted">{{ request.employee_email }}</small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{{ 'success' if request.request_type == 'bonus' else 'primary' }}">
+                                            {{ request.request_type.title() }}
+                                        </span>
+                                    </td>
+                                    <td class="fw-bold">₹{{ "{:,.2f}".format(request.requested_amount) }}</td>
+                                    <td>
+                                        <div class="text-truncate" style="max-width: 200px;" title="{{ request.reason }}">
+                                            {{ request.reason }}
+                                        </div>
+                                    </td>
+                                    <td>{{ request.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-success me-1" onclick="approveRequest('{{ request._id }}')">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" onclick="rejectRequest('{{ request._id }}')">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Employee Salary Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-table me-2"></i>Employee Salary Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="salaryTable">
+                            <thead>
+                                <tr>
+                                    <th>Photo</th>
+                                    <th>Name</th>
+                                    <th>ID</th>
+                                    <th>Department</th>
+                                    <th>Net Salary</th>
+                                    <th>Hourly Rate</th>
+                                    <th>Performance</th>
+                                    <th>Value/₹</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for summary in employee_summaries %}
+                                <tr>
+                                    <td>
+                                        {% if summary.employee.photo %}
+                                        <img src="{{ url_for('uploaded_file', filename=summary.employee.photo) }}" 
+                                             class="rounded-circle" width="40" height="40" alt="Photo">
+                                        {% else %}
+                                        <div class="avatar-sm bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center">
+                                            {{ summary.employee.name[0].upper() }}
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="fw-bold">{{ summary.employee.name }}</td>
+                                    <td><code>{{ summary.employee._id[:8] }}...</code></td>
+                                    <td>{{ summary.employee.department }}</td>
+                                    <td class="fw-bold text-success">₹{{ "{:,.2f}".format(summary.net_salary) }}</td>
+                                    <td>₹{{ "{:.2f}".format(summary.hourly_rate) }}</td>
+                                    <td>
+                                        {% if summary.performance_score %}
+                                        <span class="badge bg-{{ 'success' if summary.performance_score >= 80 else 'warning' if summary.performance_score >= 60 else 'danger' }}">
+                                            {{ "%.1f"|format(summary.performance_score) }}%
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if summary.value_per_rupee %}
+                                        <span class="badge bg-info">{{ "%.3f"|format(summary.value_per_rupee) }}</span>
+                                        {% else %}
+                                        <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-sm btn-outline-primary" onclick="viewComponents('{{ summary.employee._id }}')">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-warning" onclick="editComponents('{{ summary.employee._id }}')">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info" onclick="viewHistory('{{ summary.employee._id }}')">
+                                                <i class="fas fa-history"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Components Modal -->
+<div class="modal fade" id="componentsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Salary Components</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="componentsContent">
+                    <!-- Components will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Components Modal -->
+<div class="modal fade" id="editComponentsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Salary Components</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="editComponentsContent">
+                    <!-- Edit form will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- History Modal -->
+<div class="modal fade" id="historyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Salary History</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <button class="btn btn-primary" onclick="generateHistory()">
+                        <i class="fas fa-plus me-1"></i>Generate New Snapshot
+                    </button>
+                </div>
+                <div id="historyContent">
+                    <!-- History will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Request Action Modal -->
+<div class="modal fade" id="requestActionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="requestActionTitle">Action on Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="requestActionForm">
+                    <div class="mb-3">
+                        <label for="adminResponse" class="form-label">Admin Response</label>
+                        <textarea class="form-control" id="adminResponse" rows="3" placeholder="Optional response to employee..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn" id="requestActionBtn" onclick="submitRequestAction()">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- History Generation Modal -->
+<div class="modal fade" id="generateHistoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Generate Salary History</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="generateHistoryForm">
+                    <div class="mb-3">
+                        <label for="periodStart" class="form-label">Period Start</label>
+                        <input type="date" class="form-control" id="periodStart" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="periodEnd" class="form-label">Period End</label>
+                        <input type="date" class="form-control" id="periodEnd" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitGenerateHistory()">Generate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+<script src="{{ url_for('salary.static', filename='salary.js') }}"></script>
+
+<script>
+let currentEmployeeId = null;
+let currentRequestId = null;
+let currentAction = null;
+
+// Initialize DataTable
+$(document).ready(function() {
+    $('#salaryTable').DataTable({
+        "pageLength": 25,
+        "order": [[4, "desc"]], // Sort by Net Salary descending
+        "columnDefs": [
+            { "orderable": false, "targets": [0, 8] } // Disable sorting on photo and actions columns
+        ]
+    });
+});
+
+function viewComponents(employeeId) {
+    currentEmployeeId = employeeId;
+    loadComponents(employeeId, false);
+    $('#componentsModal').modal('show');
+}
+
+function editComponents(employeeId) {
+    currentEmployeeId = employeeId;
+    loadComponents(employeeId, true);
+    $('#editComponentsModal').modal('show');
+}
+
+function viewHistory(employeeId) {
+    currentEmployeeId = employeeId;
+    loadHistory(employeeId);
+    $('#historyModal').modal('show');
+}
+
+function approveRequest(requestId) {
+    currentRequestId = requestId;
+    currentAction = 'approve';
+    $('#requestActionTitle').text('Approve Request');
+    $('#requestActionBtn').removeClass('btn-danger').addClass('btn-success').text('Approve');
+    $('#requestActionModal').modal('show');
+}
+
+function rejectRequest(requestId) {
+    currentRequestId = requestId;
+    currentAction = 'reject';
+    $('#requestActionTitle').text('Reject Request');
+    $('#requestActionBtn').removeClass('btn-success').addClass('btn-danger').text('Reject');
+    $('#requestActionModal').modal('show');
+}
+
+function generateHistory() {
+    $('#generateHistoryModal').modal('show');
+}
+
+function exportSalaryHistory() {
+    window.open('/salary/admin/export/history', '_blank');
+}
+
+function exportPayrollSnapshot() {
+    window.open('/salary/admin/export/payroll', '_blank');
+}
+</script>
+{% endblock %}

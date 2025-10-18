@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Logs - Employee Management System{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-clipboard-list me-2"></i>Audit Logs</h2>
+                <div class="text-muted">
+                    <small>Admin-only access - All administrative actions are logged here</small>
+                </div>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0"><i class="fas fa-history me-2"></i>System Activity Log</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if logs %}
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Action</th>
+                                        <th>Actor</th>
+                                        <th>Target</th>
+                                        <th>Details</th>
+                                        <th>IP Address</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for log in logs %}
+                                    <tr>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <span class="badge 
+                                                {% if log.action.startswith('ADD') %}bg-success
+                                                {% elif log.action.startswith('UPDATE') %}bg-warning
+                                                {% elif log.action.startswith('DELETE') %}bg-danger
+                                                {% elif log.action.startswith('APPROVE') %}bg-info
+                                                {% elif log.action.startswith('REJECT') %}bg-secondary
+                                                {% elif log.action.startswith('UNAUTHORIZED') %}bg-danger
+                                                {% else %}bg-primary{% endif %}">
+                                                {{ log.action.replace('_', ' ') }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <strong>{{ log.actor_name }}</strong><br>
+                                            <small class="text-muted">{{ log.actor_email }}</small>
+                                        </td>
+                                        <td>
+                                            <code>{{ log.target }}</code>
+                                        </td>
+                                        <td>
+                                            {% if log.details %}
+                                                <button class="btn btn-sm btn-outline-info" type="button" 
+                                                        data-bs-toggle="collapse" 
+                                                        data-bs-target="#details-{{ loop.index }}" 
+                                                        aria-expanded="false">
+                                                    <i class="fas fa-eye"></i> View
+                                                </button>
+                                                <div class="collapse mt-2" id="details-{{ loop.index }}">
+                                                    <div class="card card-body">
+                                                        <pre class="mb-0"><code>{{ log.details | tojson(indent=2) }}</code></pre>
+                                                    </div>
+                                                </div>
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">{{ log.ip_address }}</small>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-clipboard-list fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">No audit logs found</h5>
+                            <p class="text-muted">Administrative actions will appear here once they are performed.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>About Audit Logs</h6>
+                    <ul class="mb-0">
+                        <li>All administrative actions are automatically logged with timestamps</li>
+                        <li>Logs include actor information, target details, and IP addresses</li>
+                        <li>Unauthorized access attempts are tracked and logged</li>
+                        <li>Admin account deletions are prevented for security</li>
+                        <li>Only administrators can view these logs</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
